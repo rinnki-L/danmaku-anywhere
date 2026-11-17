@@ -4,15 +4,14 @@ import type {
   KazumiSearchResult,
 } from '@danmaku-anywhere/extension-protocol'
 import { createJob, createTab, Logger } from '../utils.js'
+import { kazumiGetChaptersApi, kazumiSearchApi } from './api.js'
 
 export const kazumiSearch = async (
   keyword: string,
   policy: KazumiPolicy
 ): Promise<KazumiSearchResult[]> => {
   if (policy.searchMode === 'api') {
-    throw new Error(
-      `Rule "${policy.name}" searches through an API, which is not supported`
-    )
+    return kazumiSearchApi(keyword, policy)
   }
 
   // Replace @keyword in the search URL with the actual keyword
@@ -112,9 +111,7 @@ export const kazumiGetChapters = async (
   policy: KazumiPolicy
 ): Promise<KazumiChapterResult[][]> => {
   if (policy.chapterMode === 'api') {
-    throw new Error(
-      `Rule "${policy.name}" lists chapters through an API, which is not supported`
-    )
+    return kazumiGetChaptersApi(contentUrl, policy)
   }
 
   await using tabResource = await createTab(contentUrl)

@@ -4,10 +4,20 @@ import { createTab } from '../utils.js'
 import { kazumiGetChapters, kazumiSearch } from './tasks.js'
 
 /**
- * The scraper only knows how to read a page with XPath. A rule whose search
- * or chapter step runs through an API must be refused up front with a clear
- * error, before any tab is opened on its empty URL.
+ * A rule whose search or chapter step runs through an API must reach the API
+ * implementation without opening a tab; an xpath step still opens one. Rules
+ * stored before the mode fields existed have no mode, and behave as xpath.
  */
+
+const { searchApiMock, chaptersApiMock } = vi.hoisted(() => ({
+  searchApiMock: vi.fn(),
+  chaptersApiMock: vi.fn(),
+}))
+
+vi.mock('./api.js', () => ({
+  kazumiSearchApi: searchApiMock,
+  kazumiGetChaptersApi: chaptersApiMock,
+}))
 
 vi.mock('../utils.js', () => ({
   createTab: vi.fn(),
@@ -56,23 +66,45 @@ const apiChapterPolicy: KazumiPolicy = {
   chapterResult: '',
 }
 
-describe('api mode refusal', () => {
+describe('api mode routing', () => {
   beforeEach(() => {
     vi.mocked(createTab).mockReset()
+    searchApiMock.mockReset()
+    chaptersApiMock.mockReset()
   })
 
-  it('kazumiSearch refuses an api search rule without opening a tab', async () => {
-    await expect(kazumiSearch('keyword', apiSearchPolicy)).rejects.toThrow(
-      /searches through an API/
+  it('kazumiSearch asks the API implementation for an api search rule', async () => {
+    const results = [{ name: 'Show', url: 'https://example.com/show' }]
+    searchApiMock.mockResolvedValue(results)
+
+    await expect(kazumiSearch('keyword', apiSearchPolicy)).resolves.toEqual(
+      results
+    )
+    expect(searchApiMock).toHaveBeenCalledWith('keyword', apiSearchPolicy)
+    expect(createTab).not.toHaveBeenCalled()
+  })
+
+  it('kazumiGetChapters asks the API implementation for an api chapter rule', async () => {
+    const roads = [[{ name: '1', url: 'https://example.com/1' }]]
+    chaptersApiMock.mockResolvedValue(roads)
+
+    await expect(
+      kazumiGetChapters('https://example.com/show', apiChapterPolicy)
+    ).resolves.toEqual(roads)
+    expect(chaptersApiMock).toHaveBeenCalledWith(
+      'https://example.com/show',
+      apiChapterPolicy
     )
     expect(createTab).not.toHaveBeenCalled()
   })
 
-  it('kazumiGetChapters refuses an api chapter rule without opening a tab', async () => {
-    await expect(
-      kazumiGetChapters('https://example.com/show', apiChapterPolicy)
-    ).rejects.toThrow(/lists chapters through an API/)
-    expect(createTab).not.toHaveBeenCalled()
+  it('does not call the API implementation for an xpath rule', async () => {
+    vi.mocked(createTab).mockRejectedValue(new Error('tab opened'))
+
+    await expect(kazumiSearch('keyword', xpathPolicy)).rejects.toThrow(
+      'tab opened'
+    )
+    expect(searchApiMock).not.toHaveBeenCalled()
   })
 
   it('kazumiGetChapters still runs for an api search rule with xpath chapters', async () => {
@@ -82,6 +114,7 @@ describe('api mode refusal', () => {
       kazumiGetChapters('https://example.com/show', apiSearchPolicy)
     ).rejects.toThrow('tab opened')
     expect(createTab).toHaveBeenCalledWith('https://example.com/show')
+    expect(chaptersApiMock).not.toHaveBeenCalled()
   })
 })
 
